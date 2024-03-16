@@ -10,6 +10,8 @@
 // T-Dongle specific
 #include "SD_MMC.h"
 #include "pin_config.h"
+#include "rg.h"
+
 
 /* external library */
 /* To use Arduino, you need to place lv_conf.h in the \Arduino\libraries directory */
@@ -113,7 +115,7 @@ class AdvertisedDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks
   void onResult(NimBLEAdvertisedDevice *advertisedDevice)
   {
     // LED ON
-    //digitalWrite(LED_BUILTIN, HIGH);
+    // digitalWrite(LED_BUILTIN, HIGH);
     // Convert device advertisement to a rateLimitId
     uint32_t id = getRateLimitId(advertisedDevice);
     // Use rateLimitId and our position in the mesh to determine
@@ -145,7 +147,7 @@ class AdvertisedDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks
       }
     }
     // LED OFF
-    //digitalWrite(LED_BUILTIN, LOW);
+    // digitalWrite(LED_BUILTIN, LOW);
   }
 };
 
@@ -369,6 +371,7 @@ void disableBLEScanning()
 
 bool syncedLogs = false;
 unsigned long lastLog;
+long totalEvents = 0;
 
 void setup()
 {
@@ -380,13 +383,22 @@ void setup()
 
   Serial.println("Starting...");
 
-  // initialize digital pin LED_BUILTIN as an output.
-  pinMode(LED_BUILTIN, OUTPUT);
+  //TFT
+  pinMode(TFT_LEDA_PIN, OUTPUT);
+  // Initialise TFT
+  tft.init();
+  tft.setRotation(0);
 
-  // dont be silly, im still gonna send it
-  // dont be silly, im still gonna send it
-  //esp_wifi_set_ps(WIFI_PS_NONE);
-  //WiFi.setSleep(false);
+  tft.fillScreen(TFT_BLACK);
+  digitalWrite(TFT_LEDA_PIN, 0);
+  tft.drawBitmap(0, 0, epd_bitmap_rg, 80, 80, TFT_WHITE);
+
+  tft.setTextFont(2);
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+
+  tft.drawNumber(totalEvents, 0, 100);
+  //tft.fillRect(0, 100, 80, 60, TFT_BLACK);
+
 
   // Construct base JSON document
   parentDoc.to<JsonObject>();
@@ -396,7 +408,6 @@ void setup()
   lastLog = millis();
 
   setupBLE();
-  Serial.println(lastLog);
 }
 
 void loop()
@@ -406,7 +417,7 @@ void loop()
     if (doConnect)
     {
       // LED ON
-      //digitalWrite(LED_BUILTIN, HIGH);
+      // digitalWrite(LED_BUILTIN, HIGH);
       // BLE scanner my be writing to JSON Document
       disableBLEScanning();
       Serial.print("Attempting BTLE connection...");
@@ -425,7 +436,7 @@ void loop()
 
       advDevice = NULL;
       // LED OFF
-      //digitalWrite(LED_BUILTIN, LOW);
+      // digitalWrite(LED_BUILTIN, LOW);
       break;
     }
 
@@ -437,6 +448,10 @@ void loop()
       appendLog(logLine);
 
       syncedLogs = true;
+
+      totalEvents += parentDoc["logs"].size();
+      tft.fillRect(0, 100, 80, 60, TFT_BLACK);
+      tft.drawNumber(totalEvents, 0, 100);
 
       lastLog = millis();
     }
@@ -467,5 +482,4 @@ void loop()
     NimBLEDevice::getScan()->clearResults();
     NimBLEDevice::getScan()->start(scanTime, scanEndedCB, false);
   }
-  // setupBLE();
 }
