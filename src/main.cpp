@@ -12,7 +12,6 @@
 #include "pin_config.h"
 #include "rg.h"
 
-
 /* external library */
 /* To use Arduino, you need to place lv_conf.h in the \Arduino\libraries directory */
 #include "TFT_eSPI.h" // https://github.com/Bodmer/TFT_eSPI
@@ -114,36 +113,48 @@ class AdvertisedDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks
 {
   void onResult(NimBLEAdvertisedDevice *advertisedDevice)
   {
-    // LED ON
-    // digitalWrite(LED_BUILTIN, HIGH);
-    // Convert device advertisement to a rateLimitId
-    uint32_t id = getRateLimitId(advertisedDevice);
-    // Use rateLimitId and our position in the mesh to determine
-    // if the remote devices is "ours" to log it's advertisement data.
-    // This prevents 15x devices logging the same advertisement data to the
-    // server and it's SD card (duplicates)
-    if (getOwnership(id, scannerIndex, scannerCount))
+    // No Apple
+    char apl[2] = {0x4c, 0x00};
+    if (advertisedDevice->getManufacturerData().length() >= 2)
     {
-      JsonObject scanObj = logDoc.createNestedObject(advertisedDevice->getAddress().toString());
-      scanObj["name"] = NimBLEUtils::buildHexData(nullptr,
-                                                  (uint8_t *)advertisedDevice->getName().data(),
-                                                  advertisedDevice->getName().length());
-      scanObj["rssi"] = advertisedDevice->getRSSI();
-      scanObj["man"] = NimBLEUtils::buildHexData(nullptr,
-                                                 (uint8_t *)advertisedDevice->getManufacturerData().data(),
-                                                 advertisedDevice->getManufacturerData().length());
-      scanObj["connectable"] = advertisedDevice->isConnectable();
-      scanObj["addr_type"] = advertisedDevice->getAddressType();
-
-      // Using the rateLimitId for a device advertisement, check if
-      // the rateLimitId is populated in our rateLimitList and/or
-      // if it's rateLimit has expired yet
-      if (advDevice == NULL && isConnectionAllowed(id))
+      if (memcmp((uint8_t *)advertisedDevice->getManufacturerData().data(), apl, 2) != 0)
       {
-        // Set device reference for upcoming connection attempt
-        advDevice = advertisedDevice;
-        // Set flag that allows early-exiting the main loop()
-        doConnect = true;
+        // LED ON
+        // digitalWrite(LED_BUILTIN, HIGH);
+        // Convert device advertisement to a rateLimitId
+        uint32_t id = getRateLimitId(advertisedDevice);
+        // Use rateLimitId and our position in the mesh to determine
+        // if the remote devices is "ours" to log it's advertisement data.
+        // This prevents 15x devices logging the same advertisement data to the
+        // server and it's SD card (duplicates)
+        if (getOwnership(id, scannerIndex, scannerCount))
+        {
+          JsonObject scanObj = logDoc.createNestedObject(advertisedDevice->getAddress().toString());
+          scanObj["name"] = NimBLEUtils::buildHexData(nullptr,
+                                                      (uint8_t *)advertisedDevice->getName().data(),
+                                                      advertisedDevice->getName().length());
+          scanObj["rssi"] = advertisedDevice->getRSSI();
+          scanObj["man"] = NimBLEUtils::buildHexData(nullptr,
+                                                     (uint8_t *)advertisedDevice->getManufacturerData().data(),
+                                                     advertisedDevice->getManufacturerData().length());
+          scanObj["connectable"] = advertisedDevice->isConnectable();
+          scanObj["addr_type"] = advertisedDevice->getAddressType();
+
+          // Using the rateLimitId for a device advertisement, check if
+          // the rateLimitId is populated in our rateLimitList and/or
+          // if it's rateLimit has expired yet
+          if (advDevice == NULL && isConnectionAllowed(id) && advertisedDevice->isConnectable())
+          {
+            // Set device reference for upcoming connection attempt
+            advDevice = advertisedDevice;
+            // Set flag that allows early-exiting the main loop()
+            doConnect = true;
+          }
+        }
+      }
+      else
+      {
+        Serial.println("Avoided Apple device.");
       }
     }
     // LED OFF
@@ -383,7 +394,7 @@ void setup()
 
   Serial.println("Starting...");
 
-  //TFT
+  // TFT
   pinMode(TFT_LEDA_PIN, OUTPUT);
   // Initialise TFT
   tft.init();
@@ -397,8 +408,7 @@ void setup()
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
 
   tft.drawNumber(totalEvents, 0, 100);
-  //tft.fillRect(0, 100, 80, 60, TFT_BLACK);
-
+  // tft.fillRect(0, 100, 80, 60, TFT_BLACK);
 
   // Construct base JSON document
   parentDoc.to<JsonObject>();
