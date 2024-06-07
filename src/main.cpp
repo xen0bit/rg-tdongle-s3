@@ -26,21 +26,21 @@ TFT_eSPI tft = TFT_eSPI();
     y += 8;                    \
   } while (0);
 
-void sd_init(void)
+int sd_init(void)
 {
   int32_t x, y;
   SD_MMC.setPins(SD_MMC_CLK_PIN, SD_MMC_CMD_PIN, SD_MMC_D0_PIN, SD_MMC_D1_PIN, SD_MMC_D2_PIN, SD_MMC_D3_PIN);
   if (!SD_MMC.begin())
   {
     PRINT_STR("Card Mount Failed", x, y)
-    return;
+    return 1;
   }
   uint8_t cardType = SD_MMC.cardType();
 
   if (cardType == CARD_NONE)
   {
     PRINT_STR("No SD_MMC card attached", x, y)
-    return;
+    return 1;
   }
   String str;
   str = "SD_MMC Card Type: ";
@@ -77,6 +77,7 @@ void sd_init(void)
   str += uint32_t(SD_MMC.usedBytes() / (1024 * 1024));
   str += "MB";
   PRINT_STR(str, x, y)
+  return 0;
 }
 
 void appendLog(String log)
@@ -87,6 +88,7 @@ void appendLog(String log)
     Serial.println(F("Failed to create file"));
     return;
   }
+  Serial.println(log);
   file.println(log);
   Serial.println("wrote log to disk");
   file.close();
@@ -101,7 +103,7 @@ static bool doConnect = false;
 static uint32_t scanTime = 0; /** 0 = scan forever */
 
 // JSON doc for logging
-DynamicJsonDocument parentDoc(5120);
+DynamicJsonDocument parentDoc(16384);
 JsonObject logDoc = parentDoc.createNestedObject("logs");
 
 // Bluetooth
@@ -115,47 +117,44 @@ class AdvertisedDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks
   {
     // No Apple
     char apl[2] = {0x4c, 0x00};
-    if (advertisedDevice->getManufacturerData().length() >= 2)
+    if (advertisedDevice->getManufacturerData().length() == 0 || memcmp((uint8_t *)advertisedDevice->getManufacturerData().data(), apl, 2) != 0)
     {
-      if (memcmp((uint8_t *)advertisedDevice->getManufacturerData().data(), apl, 2) != 0)
+      // LED ON
+      // digitalWrite(LED_BUILTIN, HIGH);
+      // Convert device advertisement to a rateLimitId
+      uint32_t id = getRateLimitId(advertisedDevice);
+      // Use rateLimitId and our position in the mesh to determine
+      // if the remote devices is "ours" to log it's advertisement data.
+      // This prevents 15x devices logging the same advertisement data to the
+      // server and it's SD card (duplicates)
+      if (getOwnership(id, scannerIndex, scannerCount))
       {
-        // LED ON
-        // digitalWrite(LED_BUILTIN, HIGH);
-        // Convert device advertisement to a rateLimitId
-        uint32_t id = getRateLimitId(advertisedDevice);
-        // Use rateLimitId and our position in the mesh to determine
-        // if the remote devices is "ours" to log it's advertisement data.
-        // This prevents 15x devices logging the same advertisement data to the
-        // server and it's SD card (duplicates)
-        if (getOwnership(id, scannerIndex, scannerCount))
-        {
-          JsonObject scanObj = logDoc.createNestedObject(advertisedDevice->getAddress().toString());
-          scanObj["name"] = NimBLEUtils::buildHexData(nullptr,
-                                                      (uint8_t *)advertisedDevice->getName().data(),
-                                                      advertisedDevice->getName().length());
-          scanObj["rssi"] = advertisedDevice->getRSSI();
-          scanObj["man"] = NimBLEUtils::buildHexData(nullptr,
-                                                     (uint8_t *)advertisedDevice->getManufacturerData().data(),
-                                                     advertisedDevice->getManufacturerData().length());
-          scanObj["connectable"] = advertisedDevice->isConnectable();
-          scanObj["addr_type"] = advertisedDevice->getAddressType();
+        JsonObject scanObj = logDoc.createNestedObject(advertisedDevice->getAddress().toString());
+        scanObj["name"] = NimBLEUtils::buildHexData(nullptr,
+                                                    (uint8_t *)advertisedDevice->getName().data(),
+                                                    advertisedDevice->getName().length());
+        scanObj["rssi"] = advertisedDevice->getRSSI();
+        scanObj["man"] = NimBLEUtils::buildHexData(nullptr,
+                                                   (uint8_t *)advertisedDevice->getManufacturerData().data(),
+                                                   advertisedDevice->getManufacturerData().length());
+        scanObj["connectable"] = advertisedDevice->isConnectable();
+        scanObj["addr_type"] = advertisedDevice->getAddressType();
 
-          // Using the rateLimitId for a device advertisement, check if
-          // the rateLimitId is populated in our rateLimitList and/or
-          // if it's rateLimit has expired yet
-          if (advDevice == NULL && isConnectionAllowed(id) && advertisedDevice->isConnectable())
-          {
-            // Set device reference for upcoming connection attempt
-            advDevice = advertisedDevice;
-            // Set flag that allows early-exiting the main loop()
-            doConnect = true;
-          }
+        // Using the rateLimitId for a device advertisement, check if
+        // the rateLimitId is populated in our rateLimitList and/or
+        // if it's rateLimit has expired yet
+        if (advDevice == NULL && isConnectionAllowed(id) && advertisedDevice->isConnectable())
+        {
+          // Set device reference for upcoming connection attempt
+          advDevice = advertisedDevice;
+          // Set flag that allows early-exiting the main loop()
+          doConnect = true;
         }
       }
-      else
-      {
-        Serial.println("Avoided Apple device.");
-      }
+    }
+    else
+    {
+      Serial.println("Avoided Apple device.");
     }
     // LED OFF
     // digitalWrite(LED_BUILTIN, LOW);
@@ -389,16 +388,19 @@ void setup()
   Serial.begin(115200);
 
   delay(2000);
-  sd_init();
-  delay(4000);
-
   Serial.println("Starting...");
 
   // TFT
   pinMode(TFT_LEDA_PIN, OUTPUT);
   // Initialise TFT
   tft.init();
+  // Initialize SD card
+  while (sd_init() != 0)
+  {
+    delay(30000);
+  }
   tft.setRotation(0);
+  delay(4000);
 
   tft.fillScreen(TFT_BLACK);
   digitalWrite(TFT_LEDA_PIN, 0);
@@ -430,12 +432,25 @@ void loop()
       // digitalWrite(LED_BUILTIN, HIGH);
       // BLE scanner my be writing to JSON Document
       disableBLEScanning();
-      Serial.print("Attempting BTLE connection...");
+      Serial.print("Attempting BTLE connection to ");
+      Serial.print(advDevice->getAddress().toString().c_str());
+      Serial.print("...");
       // reset for next round
       doConnect = false;
       if (connectToServer())
       {
         Serial.println("done.");
+        String logLine;
+        serializeJson(parentDoc, logLine);
+        appendLog(logLine);
+
+        syncedLogs = true;
+
+        totalEvents += parentDoc["logs"].size();
+        tft.fillRect(0, 100, 80, 60, TFT_BLACK);
+        tft.drawNumber(totalEvents, 0, 100);
+
+        lastLog = millis();
       }
       else
       {
@@ -451,8 +466,9 @@ void loop()
     }
 
     // Log every 60s
-    if (millis() - lastLog > 60000)
+    if (millis() - lastLog > 15000)
     {
+      disableBLEScanning();
       String logLine;
       serializeJson(parentDoc, logLine);
       appendLog(logLine);
@@ -464,24 +480,25 @@ void loop()
       tft.drawNumber(totalEvents, 0, 100);
 
       lastLog = millis();
-    }
-
-    // Check if we cleared the logs
-    if (syncedLogs)
-    {
-      syncedLogs = false;
-      // BLE scanner my be writing to JSON Document
-      // disableBLEScanning();
-      // Reset our JSON doc to initial state
-      parentDoc.clear();
-      parentDoc.garbageCollect();
-      parentDoc["mac"] = scannerMac;
-      logDoc = parentDoc.createNestedObject("logs");
-
-      // NimBLEDevice::getScan()->clearResults();
-      // NimBLEDevice::getScan()->start(scanTime, scanEndedCB, false);
       break;
     }
+  }
+
+  // Check if we cleared the logs
+  if (syncedLogs)
+  {
+    syncedLogs = false;
+    // BLE scanner my be writing to JSON Document
+    disableBLEScanning();
+    // Reset our JSON doc to initial state
+    parentDoc.clear();
+    parentDoc.garbageCollect();
+    parentDoc["mac"] = scannerMac;
+    logDoc = parentDoc.createNestedObject("logs");
+
+    // NimBLEDevice::getScan()->clearResults();
+    // NimBLEDevice::getScan()->start(scanTime, scanEndedCB, false);
+    // break;
   }
 
   Serial.printf_P(PSTR("free heap memory: %d\n"), ESP.getFreeHeap());
