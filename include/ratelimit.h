@@ -4,7 +4,7 @@
 
 // Rate Limiting
 // Define the maximum number of allowed MAC addresses.
-#define MAX_RATE_LIMIT_ITEMS 100
+#define MAX_RATE_LIMIT_ITEMS 25
 // Define the expiration time in seconds.
 #define EXPIRATION_TIME 300
 

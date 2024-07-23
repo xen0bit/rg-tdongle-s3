@@ -140,6 +140,10 @@ class AdvertisedDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks
         scanObj["connectable"] = advertisedDevice->isConnectable();
         scanObj["addr_type"] = advertisedDevice->getAddressType();
 
+        // tft.fillScreen(TFT_BLACK);
+        tft.fillRect(0, 0, 160, 16, TFT_BLACK);
+        tft.drawString(advertisedDevice->getName().c_str(), 0, 0);
+
         // Using the rateLimitId for a device advertisement, check if
         // the rateLimitId is populated in our rateLimitList and/or
         // if it's rateLimit has expired yet
@@ -152,12 +156,6 @@ class AdvertisedDeviceCallbacks : public NimBLEAdvertisedDeviceCallbacks
         }
       }
     }
-    else
-    {
-      Serial.println("Avoided Apple device.");
-    }
-    // LED OFF
-    // digitalWrite(LED_BUILTIN, LOW);
   }
 };
 
@@ -394,13 +392,14 @@ void setup()
   pinMode(TFT_LEDA_PIN, OUTPUT);
   // Initialise TFT
   tft.init();
-  // Initialize SD card
+  delay(4000);
+  tft.setRotation(3);
+  // tft.setTextSize(2);
+  //  Initialize SD card
   while (sd_init() != 0)
   {
     delay(30000);
   }
-  tft.setRotation(0);
-  delay(4000);
 
   tft.fillScreen(TFT_BLACK);
   digitalWrite(TFT_LEDA_PIN, 0);
@@ -409,7 +408,7 @@ void setup()
   tft.setTextFont(2);
   tft.setTextColor(TFT_WHITE, TFT_BLACK);
 
-  tft.drawNumber(totalEvents, 0, 100);
+  tft.drawNumber(totalEvents, 90, 65);
   // tft.fillRect(0, 100, 80, 60, TFT_BLACK);
 
   // Construct base JSON document
@@ -448,7 +447,7 @@ void loop()
 
         totalEvents += parentDoc["logs"].size();
         tft.fillRect(0, 100, 80, 60, TFT_BLACK);
-        tft.drawNumber(totalEvents, 0, 100);
+        tft.drawNumber(totalEvents, 90, 65);
 
         lastLog = millis();
       }
@@ -477,7 +476,7 @@ void loop()
 
       totalEvents += parentDoc["logs"].size();
       tft.fillRect(0, 100, 80, 60, TFT_BLACK);
-      tft.drawNumber(totalEvents, 0, 100);
+      tft.drawNumber(totalEvents, 90, 65);
 
       lastLog = millis();
       break;
